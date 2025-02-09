@@ -1,0 +1,35 @@
+\section{Challenges and Significance}
+
+Financial markets are inherently complex, characterized by:
+
+\begin{itemize}
+\item \textbf{Noise:} The presence of random fluctuations and irrelevant information.
+\item \textbf{Non-stationarity:} The underlying statistical properties of the data change over time.
+\item \textbf{Unpredictable external factors:} News events, economic shifts, and geopolitical tensions can significantly impact market behavior.
+\end{itemize}
+
+Our model will initially assume no slippage in the backtesting phase. However, to ensure realistic performance evaluation, we will incorporate slippage-adjusted simulations and liquidity constraints. This will help to mitigate execution risks and provide a more accurate assessment of the strategy's real-world viability.
+
+\section{Data}
+
+We will collect the following data on the constituents of the S\&P 500 from yfinance, covering the past \textit{n} years:
+
+\begin{itemize}
+\item \textbf{Price Data:} Open, High, Low, Close, Adjusted Close, Volume.
+\item \textbf{Fundamental Data:} Market Cap, Earning Reports, PE Ratios.
+\end{itemize}
+
+\section{Approach}
+
+We will define the prediction problem as a classification task for our LSTM network. Our primary reference material will be "Deep learning with long short-term memory networks for financial market predictions" by Thomas Fischer and Christopher Krauss. We will prioritize the functionality of our model and trading strategy.
+
+\section{Evaluation}
+
+The project's success will be evaluated based on:
+
+\begin{itemize}
+\item \textbf{Backtesting:} The performance of the strategy will be assessed through backtesting on historical S\&P 500 data.
+\item \textbf{Functionality:} The primary focus will be on developing a functional LSTM network and trading strategy.
+\end{itemize}
+
+\end{document}

@@ -4,14 +4,6 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
-from alpha_vantage.timeseries import TimeSeries
-import time
-from tqdm import tqdm
-from dotenv import load_dotenv
-import os
-
-# Load environment variables
-load_dotenv()
 
 # Configuration
 CONFIG = {
@@ -118,6 +110,7 @@ def find_best_hyperparameters(data, train_size):
 
 def main():
     # Load data
+    print("Loading data from aapl_data.csv...")
     scaler = MinMaxScaler()
     df = pd.read_csv('aapl_data.csv', index_col=0)
     df.index = pd.to_datetime(df.index)

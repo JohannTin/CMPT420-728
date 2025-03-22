@@ -3,13 +3,15 @@ import pandas as pd
 import time
 import matplotlib.pyplot as plt
 
+# https://www.alphavantage.co/documentation/
 try:
     # Initialize the TimeSeries class with your API key
-    # Note: You'll need to get a free API key from https://www.alphavantage.co/support/#api-key
+    # API key from https://www.alphavantage.co/support/#api-key
     ts = TimeSeries(key='Z3WPH5FVFZ3EW8Y1')
     
     # Get daily data for AAPL
-    data, meta_data = ts.get_daily(symbol='AAPL', outputsize='compact')
+    # outputsize can be 'compact' (last 100 data points) or 'full' (complete history)
+    data, meta_data = ts.get_daily(symbol='AAPL', outputsize='full')
     
     # Convert to pandas DataFrame
     df = pd.DataFrame.from_dict(data, orient='index')
@@ -17,6 +19,11 @@ try:
     
     # Convert index to datetime
     df.index = pd.to_datetime(df.index)
+    
+    # Display date range
+    print("\nDate Range:")
+    print(f"Start Date: {df.index.min()}")
+    print(f"End Date: {df.index.max()}")
     
     # Convert string values to float
     for col in ['Open', 'High', 'Low', 'Close', 'Volume']:

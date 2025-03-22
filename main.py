@@ -1,6 +1,3 @@
-# Set sequence length of data to be observed for prediction
-SEQ_LEN = 10
-
 def MakePrediction():
     # Get recent SEQ_LEN days of Financial Data 
 

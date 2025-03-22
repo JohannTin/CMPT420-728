@@ -8,12 +8,12 @@ import matplotlib.pyplot as plt
 # Configuration
 CONFIG = {
     'SYMBOL': 'AAPL',
-    'SEQUENCE_LENGTHS': [30, 60, 90],
+    'SEQUENCE_LENGTHS': [30, 60],
     'TRAIN_SIZE_RATIO': 0.8,
     'EPOCHS': 5,
-    'BATCH_SIZES': [16, 32, 64],
-    'LSTM_UNITS': [25, 50, 100],
-    'DROPOUT_RATES': [0.1, 0.2, 0.3],
+    'BATCH_SIZES': [16, 32],
+    'LSTM_UNITS': [25, 50],
+    'DROPOUT_RATES': [0.1, 0.2],
     'MODEL_OPTIMIZER': 'adam',
     'MODEL_LOSS': 'mse',
     'CONFIDENCE_THRESHOLD': 0.95,

@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 # https://www.alphavantage.co/documentation/
 try:
     # Initialize the TimeSeries class with your API key
-    # API key from https://www.alphavantage.co/support/#api-key
-    ts = TimeSeries(key='Z3WPH5FVFZ3EW8Y1')
+    API_KEY = 'IB4I6GNFN8W571ZP'
+    ts = TimeSeries(key=API_KEY)
     
     # Get daily data for AAPL
     # outputsize can be 'compact' (last 100 data points) or 'full' (complete history)
@@ -32,6 +32,10 @@ try:
     # Sort by date
     df = df.sort_index()
     
+    # Calculate 8 EMA and 200 SMA
+    df['8_EMA'] = df['Close'].ewm(span=8, adjust=False).mean()
+    df['200_SMA'] = df['Close'].rolling(window=200).mean()
+    
     # Validate data
     if df.empty:
         raise ValueError("No data was retrieved from the API")
@@ -51,10 +55,12 @@ try:
     print("\nDataset Info:")
     print(df.info())
     
-    # Create a plot of closing prices
+    # Create a plot of closing prices with EMA and SMA
     plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df['Close'], label='Closing Price')
-    plt.title('AAPL Stock Closing Prices')
+    plt.plot(df.index, df['Close'], label='Closing Price', alpha=0.8)
+    plt.plot(df.index, df['8_EMA'], label='8-day EMA', alpha=0.8)
+    plt.plot(df.index, df['200_SMA'], label='200-day SMA', alpha=0.8)
+    plt.title('AAPL Stock Price with Technical Indicators')
     plt.xlabel('Date')
     plt.ylabel('Price (USD)')
     plt.grid(True)

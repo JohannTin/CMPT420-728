@@ -16,7 +16,7 @@ CONFIG = {
     'DROPOUT_RATES': [0.2],
     'MODEL_OPTIMIZER': 'adam',
     'MODEL_LOSS': 'mse',
-    'CONFIDENCE_THRESHOLD': 0.99,
+    'CONFIDENCE_THRESHOLD': 0.90,
     'START_DATE': '2010-01-01',
     'END_DATE': '2025-01-01'
 }

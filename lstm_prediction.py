@@ -8,27 +8,72 @@ import matplotlib.pyplot as plt
 # Configuration
 CONFIG = {
     'SYMBOL': 'AAPL',
-    'SEQUENCE_LENGTHS': [30, 60],
+    'SEQUENCE_LENGTHS': [60],
     'TRAIN_SIZE_RATIO': 0.8,
     'EPOCHS': 5,
-    'BATCH_SIZES': [16, 32],
-    'LSTM_UNITS': [25, 50],
-    'DROPOUT_RATES': [0.1, 0.2],
+    'BATCH_SIZES': [16],
+    'LSTM_UNITS': [50],
+    'DROPOUT_RATES': [0.2],
     'MODEL_OPTIMIZER': 'adam',
     'MODEL_LOSS': 'mse',
-    'CONFIDENCE_THRESHOLD': 0.95,
-    'START_DATE': '2020-01-01',
+    'CONFIDENCE_THRESHOLD': 0.99,
+    'START_DATE': '2010-01-01',
     'END_DATE': '2025-01-01'
 }
 
+def load_and_prepare_data():
+    """Load and prepare both price and sentiment data."""
+    # Load price data with indicators
+    print("Loading data from appl_data_with_indicators.csv...")
+    df_price = pd.read_csv('appl_data_with_indicators.csv')
+    df_price['Date'] = pd.to_datetime(df_price['Unnamed: 0'])
+    df_price.set_index('Date', inplace=True)
+    df_price = df_price.sort_index()
+    
+    # Load sentiment data
+    print("Loading data from sentiment_analysis_detailed.csv...")
+    df_sentiment = pd.read_csv('sentiment_analysis_detailed.csv')
+    # Convert published_at to datetime and extract date more robustly
+    df_sentiment['Date'] = pd.to_datetime(df_sentiment['published_at'], utc=True).dt.strftime('%Y-%m-%d')
+    df_sentiment['Date'] = pd.to_datetime(df_sentiment['Date'])
+    df_sentiment = df_sentiment.groupby('Date').agg({
+        'sentiment_positive': 'mean',
+        'sentiment_neutral': 'mean',
+        'sentiment_negative': 'mean'
+    }).reset_index()
+    df_sentiment['Date'] = pd.to_datetime(df_sentiment['Date'])
+    df_sentiment.set_index('Date', inplace=True)
+    
+    # Merge price and sentiment data
+    df = df_price.join(df_sentiment, how='left')
+    
+    # Forward fill sentiment scores for days without news
+    df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
+        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].fillna(method='ffill')
+    
+    # If there are still NaN values at the start, backward fill
+    df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
+        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].fillna(method='bfill')
+    
+    # Fill any remaining NaN values with neutral sentiment
+    df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
+        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].fillna(1/3)
+    
+    # Filter date range
+    df = df[(df.index >= CONFIG['START_DATE']) & (df.index <= CONFIG['END_DATE'])]
+    
+    return df
+
 def create_sequences(data, seq_length):
+    """Create sequences from multivariate data."""
     sequences, targets = [], []
     for i in range(len(data) - seq_length):
         sequences.append(data[i:i + seq_length])
-        targets.append(data[i + seq_length])
+        targets.append(data[i + seq_length, 0])  # Target is still the closing price
     return np.array(sequences), np.array(targets)
 
 def build_lstm_model(seq_length, n_features, lstm_units, dropout_rate):
+    """Build LSTM model with multiple input features."""
     model = Sequential([
         LSTM(lstm_units, return_sequences=True, input_shape=(seq_length, n_features)),
         Dropout(dropout_rate),
@@ -109,76 +154,93 @@ def find_best_hyperparameters(data, train_size):
     return best_model, best_history, best_params
 
 def main():
-    # Load data
-    print("Loading data from aapl_data.csv...")
-    scaler = MinMaxScaler()
-    df = pd.read_csv('aapl_data.csv', index_col=0)
-    df.index = pd.to_datetime(df.index)
-    df = df.sort_index()
-    df = df[(df.index >= CONFIG['START_DATE']) & (df.index <= CONFIG['END_DATE'])]
-
+    # Load and prepare data
+    df = load_and_prepare_data()
+    
+    # Select features for the model
+    feature_columns = ['Close', 'EMA_8', 'SMA_200', 
+                      'sentiment_positive', 'sentiment_neutral', 'sentiment_negative']
+    
     # Clean and convert
-    for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+    for col in feature_columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
     df.dropna(inplace=True)
-
-    data = df['Close'].values.reshape(-1, 1)
-    scaled_data = scaler.fit_transform(data)
+    
+    # Scale the features
+    scaler = MinMaxScaler()
+    scaled_data = scaler.fit_transform(df[feature_columns])
+    
+    # Split into training and testing
     train_size = int(len(scaled_data) * CONFIG['TRAIN_SIZE_RATIO'])
-
+    
     # Tune and get best model
     best_model, history, best_params = find_best_hyperparameters(scaled_data, train_size)
-
+    
     # Final training and prediction
     X, y = create_sequences(scaled_data, best_params['sequence_length'])
     X_train, X_test = X[:train_size], X[train_size:]
     y_train, y_test = y[:train_size], y[train_size:]
-
+    
     # Predictions
-    best_model.fit(X_train, y_train, epochs=CONFIG['EPOCHS'], batch_size=best_params['batch_size'], verbose=0)
+    best_model.fit(X_train, y_train, epochs=CONFIG['EPOCHS'], 
+                  batch_size=best_params['batch_size'], verbose=0)
     train_predictions = best_model.predict(X_train, verbose=0)
     test_predictions = best_model.predict(X_test, verbose=0)
-
-    train_predictions = scaler.inverse_transform(train_predictions)
-    test_predictions = scaler.inverse_transform(test_predictions)
-    y_test_inv = scaler.inverse_transform(y_test)
-
+    
+    # Inverse transform predictions (for closing price only)
+    close_price_scaler = MinMaxScaler()
+    close_price_scaler.fit_transform(df[['Close']])
+    
+    train_predictions = close_price_scaler.inverse_transform(train_predictions)
+    test_predictions = close_price_scaler.inverse_transform(test_predictions)
+    y_train_inv = close_price_scaler.inverse_transform(y_train.reshape(-1, 1))
+    y_test_inv = close_price_scaler.inverse_transform(y_test.reshape(-1, 1))
+    
     # Confidence and Signals
-    test_signals, confidence = generate_trading_signals(test_predictions, y_test_inv, CONFIG['CONFIDENCE_THRESHOLD'])
-
+    test_signals, confidence = generate_trading_signals(test_predictions, y_test_inv, 
+                                                      CONFIG['CONFIDENCE_THRESHOLD'])
+    
     # RMSE
-    train_rmse = np.sqrt(np.mean((train_predictions - scaler.inverse_transform(y_train)) ** 2))
+    train_rmse = np.sqrt(np.mean((train_predictions - y_train_inv) ** 2))
     test_rmse = np.sqrt(np.mean((test_predictions - y_test_inv) ** 2))
     print(f"Train RMSE: {train_rmse:.2f}, Test RMSE: {test_rmse:.2f}")
-
+    
     # Plotting
     plt.figure(figsize=(15, 7))
     plt.plot(df.index[-len(y_test_inv):], y_test_inv, label='Actual', color='blue')
     plt.plot(df.index[-len(test_predictions):], test_predictions, label='Predicted', color='orange')
-
+    
+    # Add EMA and SMA lines
+    plt.plot(df.index[-len(y_test_inv):], df['EMA_8'].iloc[-len(y_test_inv):], 
+            label='8-day EMA', color='purple', linestyle='--', alpha=0.7)
+    plt.plot(df.index[-len(y_test_inv):], df['SMA_200'].iloc[-len(y_test_inv):], 
+            label='200-day SMA', color='gray', linestyle='--', alpha=0.7)
+    
     buy_signals = test_signals == 1
     sell_signals = test_signals == -1
-    plt.scatter(df.index[-len(y_test_inv):][buy_signals], y_test_inv[buy_signals], color='green', marker='^', s=100, label='Buy Signal')
-    plt.scatter(df.index[-len(y_test_inv):][sell_signals], y_test_inv[sell_signals], color='red', marker='v', s=100, label='Sell Signal')
-
+    plt.scatter(df.index[-len(y_test_inv):][buy_signals], y_test_inv[buy_signals], 
+               color='green', marker='^', s=100, label='Buy Signal')
+    plt.scatter(df.index[-len(y_test_inv):][sell_signals], y_test_inv[sell_signals], 
+               color='red', marker='v', s=100, label='Sell Signal')
+    
     plt.title('AAPL Stock Price Prediction with Trading Signals')
     plt.xlabel('Date')
     plt.ylabel('Price (USD)')
     plt.legend()
     plt.savefig('training_history.png')
-
+    
     # Next day prediction
     last_sequence = scaled_data[-best_params['sequence_length']:]
-    last_sequence = last_sequence.reshape((1, best_params['sequence_length'], 1))
+    last_sequence = last_sequence.reshape((1, best_params['sequence_length'], scaled_data.shape[1]))
     next_day_pred = best_model.predict(last_sequence, verbose=0)
-    next_day_pred = scaler.inverse_transform(next_day_pred)
-
-    last_actual = data[-1]
+    next_day_pred = close_price_scaler.inverse_transform(next_day_pred)
+    
+    last_actual = df['Close'].iloc[-1]
     confidence_next = calculate_confidence(next_day_pred.flatten(), np.array([last_actual]))
-
+    
     print(f"\nPredicted price for next day: ${next_day_pred[0][0]:.2f}")
     print(f"Confidence level: {confidence_next[0]:.2%}")
-
+    
     if confidence_next[0] >= CONFIG['CONFIDENCE_THRESHOLD']:
         if next_day_pred[0][0] > last_actual:
             print("High confidence BUY signal")
@@ -186,14 +248,19 @@ def main():
             print("High confidence SELL signal")
     else:
         print("No trading signal - confidence below threshold")
-
-    # Save predictions
+    
+    # Save predictions with additional features
     predictions_df = pd.DataFrame({
         'Date': df.index[-len(test_predictions):],
         'Actual': y_test_inv.flatten(),
         'Predicted': test_predictions.flatten(),
         'Signal': test_signals.flatten(),
-        'Confidence': confidence.flatten()
+        'Confidence': confidence.flatten(),
+        'EMA_8': df['EMA_8'].iloc[-len(test_predictions):].values,
+        'SMA_200': df['SMA_200'].iloc[-len(test_predictions):].values,
+        'Sentiment_Positive': df['sentiment_positive'].iloc[-len(test_predictions):].values,
+        'Sentiment_Neutral': df['sentiment_neutral'].iloc[-len(test_predictions):].values,
+        'Sentiment_Negative': df['sentiment_negative'].iloc[-len(test_predictions):].values
     })
     predictions_df.to_csv('lstm_predictions.csv', index=False)
     print("Predictions saved to lstm_predictions.csv")

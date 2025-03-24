@@ -1,23 +1,39 @@
 import pandas as pd
 import numpy as np
+from collections import deque
 
 # Trading simulation configuration
 INITIAL_BANKROLL = 10000
-TRADE_PERCENTAGE = 0.3  # Default trade percentage if not using confidence-based sizing
-CONFIDENCE_THRESHOLD = 0.95  # Minimum confidence level required to execute trades
-STOP_LOSS_PERCENTAGE = 0.03  # % stop loss
+CONFIDENCE_THRESHOLD = 0.7  # Minimum confidence level required to execute trades
+STOP_LOSS_PERCENTAGE = 0.05  # % stop loss
 PREDICTIONS_FILE = 'lstm_predictions.csv'
 
-# Confidence-based trade sizing configuration
-CONFIDENCE_TRADE_SIZES = {
-    0.99: 0.4,  # 40% of bankroll for very high confidence trades
-    0.97: 0.3,  # 30% of bankroll for high confidence trades
-    0.95: 0.2,  # 20% of bankroll for moderate confidence trades
-}
+# Kelly Criterion configuration
+LOOKBACK_PERIOD = 8  # Number of trades to look back for calculating dynamic win rate
+AVERAGE_WIN_RETURN = 0.02  # Average return on winning trades (2%)
+AVERAGE_LOSS_RETURN = 0.01  # Average return on losing trades (1%)
+MAX_KELLY_FRACTION = 0.5  # Maximum fraction of bankroll to risk (conservative approach)
+MIN_TRADES_FOR_KELLY = 5  # Minimum number of trades before using Kelly sizing
+
+def calculate_kelly_fraction(recent_trades):
+    """Calculate the optimal Kelly fraction for position sizing using dynamic win rate"""
+    if len(recent_trades) < MIN_TRADES_FOR_KELLY:
+        return MAX_KELLY_FRACTION * 0.5  # Use conservative sizing when insufficient trade history
+    
+    # Calculate dynamic win rate from recent trades
+    win_rate = sum(1 for trade in recent_trades if trade > 0) / len(recent_trades)
+    
+    # Kelly Formula: K = (p*b - q)/b where b = win_amount/loss_amount
+    b = AVERAGE_WIN_RETURN/AVERAGE_LOSS_RETURN  # odds ratio
+    q = 1 - win_rate
+    kelly = (win_rate*b - q)/b
+    
+    # Conservative approach: use half-Kelly or limit to maximum fraction
+    kelly = min(kelly/2, MAX_KELLY_FRACTION)
+    return max(kelly, 0)  # Ensure non-negative fraction
 
 def simulate_trading(predictions_file=PREDICTIONS_FILE, 
-                    initial_bankroll=INITIAL_BANKROLL, 
-                    trade_percentage=TRADE_PERCENTAGE, 
+                    initial_bankroll=INITIAL_BANKROLL,
                     confidence_threshold=CONFIDENCE_THRESHOLD,
                     stop_loss_percentage=STOP_LOSS_PERCENTAGE):
     # Load predictions
@@ -33,6 +49,10 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
     total_trades = 0
     stop_loss_triggered = 0  # Track number of stop loss triggers
     
+    # Initialize recent trades history for dynamic Kelly calculation
+    recent_trade_profits = deque(maxlen=LOOKBACK_PERIOD)
+    kelly_fraction = MAX_KELLY_FRACTION * 0.5  # Start conservative
+    
     # Iterate through predictions
     for i in range(len(df)):
         current_price = df['Actual'].iloc[i]
@@ -40,15 +60,12 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
         date = df['Date'].iloc[i]
         confidence = df['Confidence'].iloc[i] if 'Confidence' in df.columns else 1.0
         
-        # Determine trade percentage based on confidence using configuration
-        current_trade_percentage = 0  # Default to no trade
-        for conf_threshold, trade_size in sorted(CONFIDENCE_TRADE_SIZES.items(), reverse=True):
-            if confidence >= conf_threshold:
-                current_trade_percentage = trade_size
-                break
+        # Recalculate Kelly fraction based on recent trade history
+        kelly_fraction = calculate_kelly_fraction(recent_trade_profits)
         
-        # Calculate trade amount based on confidence-adjusted percentage
-        trade_amount = bankroll * current_trade_percentage
+        # Adjust Kelly fraction based on confidence
+        confidence_adjusted_kelly = kelly_fraction * (confidence/CONFIDENCE_THRESHOLD)
+        trade_amount = bankroll * confidence_adjusted_kelly
         
         # Check stop loss if we have a position
         if position == 1:
@@ -59,8 +76,9 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
                 bankroll += trade_value
                 position = 0
                 
-                # Calculate loss
+                # Calculate loss and update trade history
                 profit = trade_value - (shares * entry_price)
+                recent_trade_profits.append(profit)
                 total_trades += 1
                 stop_loss_triggered += 1
                 
@@ -73,7 +91,8 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
                     'Bankroll': bankroll,
                     'Profit': profit,
                     'Confidence': confidence,
-                    'Loss Percentage': loss_percentage * 100
+                    'Loss Percentage': loss_percentage * 100,
+                    'Kelly Fraction': kelly_fraction
                 })
                 shares = 0
                 continue
@@ -100,8 +119,9 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
             bankroll += trade_value
             position = 0
             
-            # Calculate if trade was profitable
+            # Calculate if trade was profitable and update history
             profit = trade_value - (shares * entry_price)
+            recent_trade_profits.append(profit)
             if profit > 0:
                 profitable_trades += 1
             total_trades += 1
@@ -114,7 +134,8 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
                 'Trade Amount': trade_value,
                 'Bankroll': bankroll,
                 'Profit': profit,
-                'Confidence': confidence
+                'Confidence': confidence,
+                'Kelly Fraction': kelly_fraction
             })
             shares = 0
     
@@ -125,6 +146,7 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
         
         # Calculate if final trade was profitable
         profit = trade_value - (shares * entry_price)
+        recent_trade_profits.append(profit)
         if profit > 0:
             profitable_trades += 1
         total_trades += 1
@@ -137,7 +159,8 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
             'Trade Amount': trade_value,
             'Bankroll': bankroll,
             'Profit': profit,
-            'Confidence': df['Confidence'].iloc[-1] if 'Confidence' in df.columns else 1.0
+            'Confidence': df['Confidence'].iloc[-1] if 'Confidence' in df.columns else 1.0,
+            'Kelly Fraction': kelly_fraction
         })
     
     # Calculate performance metrics
@@ -148,6 +171,9 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
     # Create trades DataFrame
     trades_df = pd.DataFrame(trades)
     
+    # Calculate final Kelly metrics
+    final_kelly = calculate_kelly_fraction(recent_trade_profits)
+    
     return {
         'final_bankroll': bankroll,
         'total_profit_loss': total_profit_loss,
@@ -156,7 +182,9 @@ def simulate_trading(predictions_file=PREDICTIONS_FILE,
         'total_trades': total_trades,
         'profitable_trades': profitable_trades,
         'stop_loss_triggered': stop_loss_triggered,
-        'trades': trades_df
+        'trades': trades_df,
+        'final_kelly_fraction': final_kelly,
+        'recent_win_rate': (sum(1 for trade in recent_trade_profits if trade > 0) / len(recent_trade_profits)) if recent_trade_profits else 0
     }
 
 def main():
@@ -164,15 +192,19 @@ def main():
     results = simulate_trading()
     
     # Print results
-    print("\nTrading Simulation Results")
+    print("\nTrading Simulation Results (Kelly Criterion)")
     print("=" * 50)
     print(f"Initial Bankroll: ${INITIAL_BANKROLL:,.2f}")
+    print(f"Lookback Period: {LOOKBACK_PERIOD} trades")
+    print(f"Final Kelly Fraction: {results['final_kelly_fraction']:.1%}")
+    print(f"Recent Win Rate: {results['recent_win_rate']:.1%}")
+    print(f"Max Position Size: {MAX_KELLY_FRACTION:.1%}")
     print(f"Confidence Threshold: {CONFIDENCE_THRESHOLD:.2f}")
     print(f"Stop Loss Percentage: {STOP_LOSS_PERCENTAGE:.1%}")
     print(f"Final Bankroll: ${results['final_bankroll']:,.2f}")
     print(f"Total Profit/Loss: ${results['total_profit_loss']:,.2f}")
     print(f"ROI: {results['roi_percentage']:.2f}%")
-    print(f"Win Rate: {results['win_rate']:.2f}%")
+    print(f"Overall Win Rate: {results['win_rate']:.2f}%")
     print(f"Total Trades: {results['total_trades']}")
     print(f"Profitable Trades: {results['profitable_trades']}")
     print(f"Stop Loss Triggers: {results['stop_loss_triggered']}")

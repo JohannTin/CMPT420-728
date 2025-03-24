@@ -1,25 +1,62 @@
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional, Layer, Input
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import backend as K
 import matplotlib.pyplot as plt
 
 # Configuration
 CONFIG = {
     'SYMBOL': 'AAPL',
-    'SEQUENCE_LENGTHS': [60],
-    'TRAIN_SIZE_RATIO': 0.8,
-    'EPOCHS': 5,
-    'BATCH_SIZES': [16],
-    'LSTM_UNITS': [50],
-    'DROPOUT_RATES': [0.2],
+    'SEQUENCE_LENGTHS': [30, 60, 90],
+    'TRAIN_SIZE_RATIO': 0.85,
+    'EPOCHS':100,
+    'BATCH_SIZES': [32, 64],
+    'LSTM_UNITS': [64, 128],
+    'DROPOUT_RATES': [0.2, 0.3, 0.5],
     'MODEL_OPTIMIZER': 'adam',
     'MODEL_LOSS': 'mse',
-    'CONFIDENCE_THRESHOLD': 0.90,
+    'CONFIDENCE_THRESHOLD': 0.95,
     'START_DATE': '2010-01-01',
     'END_DATE': '2025-01-01'
 }
+
+class AttentionLayer(Layer):
+    def __init__(self, **kwargs):
+        super(AttentionLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.W = self.add_weight(name='attention_weight',
+                               shape=(input_shape[-1], 1),
+                               initializer='random_normal',
+                               trainable=True)
+        self.b = self.add_weight(name='attention_bias',
+                               shape=(input_shape[1], 1),
+                               initializer='zeros',
+                               trainable=True)
+        super(AttentionLayer, self).build(input_shape)
+
+    def call(self, x):
+        # Alignment scores. Pass through tanh activation
+        e = K.tanh(K.dot(x, self.W) + self.b)
+        # Remove dimension of size 1
+        e = K.squeeze(e, axis=-1)
+        # Compute softmax
+        alpha = K.softmax(e)
+        # Reshape to match original input shape
+        alpha = K.expand_dims(alpha, axis=-1)
+        # Multiply input by attention weights
+        context = x * alpha
+        context = K.sum(context, axis=1)
+        return context
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[-1])
+
+    def get_config(self):
+        return super(AttentionLayer, self).get_config()
 
 def load_and_prepare_data():
     """Load and prepare both price and sentiment data."""
@@ -49,11 +86,11 @@ def load_and_prepare_data():
     
     # Forward fill sentiment scores for days without news
     df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
-        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].fillna(method='ffill')
+        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].ffill()
     
     # If there are still NaN values at the start, backward fill
     df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
-        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].fillna(method='bfill')
+        df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']].bfill()
     
     # Fill any remaining NaN values with neutral sentiment
     df[['sentiment_positive', 'sentiment_neutral', 'sentiment_negative']] = \
@@ -73,14 +110,17 @@ def create_sequences(data, seq_length):
     return np.array(sequences), np.array(targets)
 
 def build_lstm_model(seq_length, n_features, lstm_units, dropout_rate):
-    """Build LSTM model with multiple input features."""
-    model = Sequential([
-        LSTM(lstm_units, return_sequences=True, input_shape=(seq_length, n_features)),
-        Dropout(dropout_rate),
-        LSTM(lstm_units, return_sequences=False),
-        Dropout(dropout_rate),
-        Dense(1)
-    ])
+    """Build Bidirectional LSTM model with attention mechanism."""
+    inputs = Input(shape=(seq_length, n_features))
+    x = Bidirectional(LSTM(lstm_units, return_sequences=True))(inputs)
+    x = Dropout(dropout_rate)(x)
+    x = Bidirectional(LSTM(lstm_units // 2, return_sequences=True))(x)
+    x = Dropout(dropout_rate)(x)
+    x = AttentionLayer()(x)
+    x = Dense(32, activation='relu')(x)
+    outputs = Dense(1)(x)
+    
+    model = Model(inputs=inputs, outputs=outputs)
     model.compile(optimizer=CONFIG['MODEL_OPTIMIZER'], loss=CONFIG['MODEL_LOSS'])
     return model
 
@@ -112,6 +152,14 @@ def find_best_hyperparameters(data, train_size):
     best_history = None
     best_params = None
     
+    # Define early stopping callback
+    early_stopping = EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        restore_best_weights=True,
+        verbose=1
+    )
+    
     for seq_length in CONFIG['SEQUENCE_LENGTHS']:
         X, y = create_sequences(data, seq_length)
         X_train, X_val = X[:train_size], X[train_size:]
@@ -129,7 +177,8 @@ def find_best_hyperparameters(data, train_size):
                         epochs=CONFIG['EPOCHS'],
                         batch_size=batch_size,
                         validation_data=(X_val, y_val),
-                        verbose=0
+                        callbacks=[early_stopping],
+                        verbose=1
                     )
                     
                     val_loss = min(history.history['val_loss'])
@@ -158,9 +207,21 @@ def main():
     df = load_and_prepare_data()
     
     # Select features for the model
-    feature_columns = ['Close', 'EMA_8', 'SMA_200', 
-                      'sentiment_positive', 'sentiment_neutral', 'sentiment_negative']
+    feature_columns = [
+        'Close', 'EMA_8', 'SMA_200',
+        'RSI', 'MACD', 'Signal_Line', 'MACD_Histogram',
+        'BB_upper', 'BB_middle', 'BB_lower',
+        'Volume',
+        'sentiment_positive', 'sentiment_neutral', 'sentiment_negative'
+    ]
     
+    # Verify which columns are actually available
+    available_columns = [col for col in feature_columns if col in df.columns]
+    missing_columns = set(feature_columns) - set(available_columns)
+    if missing_columns:
+        print(f"Warning: The following columns are missing and will be excluded: {missing_columns}")
+        feature_columns = available_columns
+
     # Clean and convert
     for col in feature_columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -184,6 +245,9 @@ def main():
     # Predictions
     best_model.fit(X_train, y_train, epochs=CONFIG['EPOCHS'], 
                   batch_size=best_params['batch_size'], verbose=0)
+    best_model.save('models/lstm_model.h5')
+    print("Final model saved to models/lstm_model.h5")
+
     train_predictions = best_model.predict(X_train, verbose=0)
     test_predictions = best_model.predict(X_test, verbose=0)
     

@@ -1,0 +1,6 @@
+{
+    "confidence_threshold": 0.7,
+    "stop_loss_percentage": 0.05,
+    "lookback_period": 10,
+    "max_kelly_fraction": 0.1
+}

@@ -9,10 +9,10 @@ STOP_LOSS_PERCENTAGE = 0.05  # % stop loss
 PREDICTIONS_FILE = 'lstm_predictions.csv'
 
 # Kelly Criterion configuration
-LOOKBACK_PERIOD = 8  # Number of trades to look back for calculating dynamic win rate
+LOOKBACK_PERIOD = 10  # Number of trades to look back for calculating dynamic win rate
 AVERAGE_WIN_RETURN = 0.02  # Average return on winning trades (2%)
 AVERAGE_LOSS_RETURN = 0.01  # Average return on losing trades (1%)
-MAX_KELLY_FRACTION = 0.5  # Maximum fraction of bankroll to risk (conservative approach)
+MAX_KELLY_FRACTION = 0.05  # Maximum fraction of bankroll to risk (conservative approach)
 MIN_TRADES_FOR_KELLY = 5  # Minimum number of trades before using Kelly sizing
 
 def calculate_kelly_fraction(recent_trades):

@@ -10,12 +10,21 @@ import matplotlib.pyplot as plt
 # Configuration
 CONFIG = {
     'SYMBOL': 'AAPL',
+<<<<<<< Updated upstream
     'SEQUENCE_LENGTHS': [30],
     'TRAIN_SIZE_RATIO': 0.85,
     'EPOCHS':100,
     'BATCH_SIZES': [64],
     'LSTM_UNITS': [64],
     'DROPOUT_RATES': [0.2],
+=======
+    'SEQUENCE_LENGTHS': [30, 60, 90],
+    'TRAIN_SIZE_RATIO': 0.8,
+    'EPOCHS': 25,
+    'BATCH_SIZES': [16, 32, 64],
+    'LSTM_UNITS': [25, 50, 100],
+    'DROPOUT_RATES': [0.1, 0.2, 0.3],
+>>>>>>> Stashed changes
     'MODEL_OPTIMIZER': 'adam',
     'MODEL_LOSS': 'mse',
     'CONFIDENCE_THRESHOLD': 0.95,

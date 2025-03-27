@@ -1,7 +1,6 @@
 import torch.nn as nn
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.dates as mdates
@@ -9,7 +8,7 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 # Load stock data
-df = pd.read_csv("aapl_data.csv", parse_dates=["Date"], index_col="Date")
+df = pd.read_csv("appl_data_with_indicators.csv", parse_dates=["Date"], index_col="Date")
 
 # Check if MPS is available, otherwise fallback to CPU or CUDA
 if torch.backends.mps.is_available():
@@ -27,58 +26,10 @@ end_date = '2025-01-01'
 
 filtered_df = df.loc[start_date:end_date]
 
-# Feature Engineering - Add technical indicators
-def add_technical_indicators(df):
-    # Copy the dataframe to avoid modifying the original
-    df_with_features = df.copy()
-    
-    # Moving averages
-    df_with_features['MA5'] = df_with_features['Close'].rolling(window=5).mean()
-    df_with_features['MA10'] = df_with_features['Close'].rolling(window=10).mean()
-    df_with_features['MA20'] = df_with_features['Close'].rolling(window=20).mean()
-    
-    # Relative Strength Index (RSI)
-    delta = df_with_features['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df_with_features['RSI'] = 100 - (100 / (1 + rs))
-    
-    # Bollinger Bands
-    df_with_features['BB_middle'] = df_with_features['Close'].rolling(window=20).mean()
-    std = df_with_features['Close'].rolling(window=20).std()
-    df_with_features['BB_upper'] = df_with_features['BB_middle'] + 2 * std
-    df_with_features['BB_lower'] = df_with_features['BB_middle'] - 2 * std
-    
-    # MACD (Moving Average Convergence Divergence)
-    exp1 = df_with_features['Close'].ewm(span=12, adjust=False).mean()
-    exp2 = df_with_features['Close'].ewm(span=26, adjust=False).mean()
-    df_with_features['MACD'] = exp1 - exp2
-    df_with_features['MACD_signal'] = df_with_features['MACD'].ewm(span=9, adjust=False).mean()
-    
-    # Percentage price change
-    df_with_features['Price_Change'] = df_with_features['Close'].pct_change()
-    
-    # Volatility (standard deviation over a window)
-    df_with_features['Volatility'] = df_with_features['Close'].pct_change().rolling(window=10).std()
-    
-    # Drop NaN values created by the indicators
-    df_with_features = df_with_features.dropna()
-    
-    return df_with_features
 
-# Apply feature engineering
-enhanced_df = add_technical_indicators(filtered_df)
 
-# Prepare your data
-# Selecting the most important features
-feature_columns = [
-    "Open", "High", "Low", "Close", "Volume",
-    "MA5", "MA10", "MA20", "RSI", "MACD", "MACD_signal",
-    "BB_upper", "BB_lower", "Price_Change", "Volatility"
-]
-
-data = enhanced_df[feature_columns].values
+feature_columns = ["Open", "High", "Low", "Close", "Volume", "SMA_50","SMA_200","EMA_8","EMA_12","EMA_26","MACD","Signal_Line","MACD_Histogram","RSI","14-high","14-low","%K","%D","BB_middle","BB_upper","BB_lower","TR","ATR","OBV"]
+data = filtered_df[feature_columns].values
 
 # Normalize the data
 data_mean = data.mean(axis=0)
@@ -327,7 +278,7 @@ test_predictions_denormalized = test_predictions * data_std[0] + data_mean[0]
 y_val_denormalized = y_val_original * data_std[0] + data_mean[0]
 
 # Get the corresponding dates for validation set
-val_dates = enhanced_df.index[split_idx + seq_length:split_idx + seq_length + len(y_val)]
+val_dates = filtered_df.index[split_idx + seq_length:split_idx + seq_length + len(y_val)]
 
 # Plot the predictions against the true values
 plt.figure(figsize=(14, 7))

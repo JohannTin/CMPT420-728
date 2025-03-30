@@ -14,14 +14,14 @@ CONFIG = {
     'SYMBOL': 'AAPL',
     'SEQUENCE_LENGTH': 30,
     'TRAIN_SIZE_RATIO': 0.85,
-    'EPOCHS': 30,
+    'EPOCHS': 50,  # Increased epochs
     'BATCH_SIZE': 64,
     'LEARNING_RATE': 0.001,
     'HIDDEN_SIZE': 64,
     'NUM_HEADS': 4,
     'NUM_QUANTILES': 3,  # for P10, P50, P90
     'DROPOUT_RATE': 0.2,
-    'CONFIDENCE_THRESHOLD': 0.7,
+    'CONFIDENCE_THRESHOLD': 0.5,  # Lowered threshold
     'START_DATE': '2010-01-01',
     'END_DATE': '2025-01-01'
 }
@@ -691,7 +691,7 @@ def train_model(data, static_features, dates, num_static, num_known, num_observe
     
     # Training loop
     best_val_loss = float('inf')
-    patience = 5
+    patience = 10  # Increased patience for better training
     patience_counter = 0
     
     for epoch in range(CONFIG['EPOCHS']):
@@ -760,26 +760,36 @@ def calculate_confidence(predictions, actuals):
     confidence = 1 - (errors / max_error)
     return confidence
 
-def generate_trading_signals(predictions, actuals, model_uncertainty, confidence_threshold):
+def generate_trading_signals(predictions, actuals, model_uncertainty, confidence_threshold=0.6):
     """Generate trading signals based on predictions and confidence."""
     # Calculate confidence from prediction errors
-    confidence = calculate_confidence(predictions, actuals)
+    errors = np.abs(predictions - actuals)
+    max_error = np.max(actuals) - np.min(actuals) if np.max(actuals) != np.min(actuals) else 1.0
+    confidence = 1 - (errors / max_error)
     
     # Adjust confidence based on model uncertainty
-    adjusted_confidence = confidence * (1 - model_uncertainty)
+    adjusted_confidence = confidence * (1 - model_uncertainty * 0.5)  # Reduce uncertainty impact
     
     # Initialize signals
     signals = np.zeros(len(predictions))
     
-    # Generate buy/sell signals
+    # The key change: Compare tomorrow's predicted price to today's actual price
+    # This changes the logic to focus on predicted price movement
+    price_change = np.zeros(len(predictions))
+    for i in range(len(predictions)-1):
+        price_change[i] = predictions[i+1] - actuals[i]
+    
+    # For the last point, use the same prediction
+    price_change[-1] = predictions[-1] - actuals[-1]
+    
+    # Generate buy/sell signals based on predicted price movement
     high_confidence = adjusted_confidence >= confidence_threshold
-    price_diff = predictions - actuals
     
-    # Buy when predicted price is higher than current
-    signals[high_confidence & (price_diff > 0)] = 1
+    # Buy signal: tomorrow's price will be higher than today's
+    signals[high_confidence & (price_change > 0)] = 1
     
-    # Sell when predicted price is lower than current
-    signals[high_confidence & (price_diff < 0)] = -1
+    # Sell signal: tomorrow's price will be lower than today's
+    signals[high_confidence & (price_change < 0)] = -1
     
     return signals, adjusted_confidence
 
@@ -847,17 +857,30 @@ def evaluate_model(model, test_dataset, test_dates):
     predictions_inv = temp_array_inv[:, CONFIG['target_idx']]
     actuals_inv = target_temp_inv[:, CONFIG['target_idx']]
     
-    # Generate trading signals
+    # Generate trading signals with lower threshold
     signals, confidence = generate_trading_signals(
         predictions=predictions_inv,
         actuals=actuals_inv,
         model_uncertainty=model_uncertainty,
-        confidence_threshold=CONFIG['CONFIDENCE_THRESHOLD']
+        confidence_threshold=0.4  # Use an even lower threshold for generating signals
     )
+    
+    # Ensure we actually have some signals
+    if np.sum(signals != 0) == 0:
+        print("WARNING: No trading signals generated. Using price movement directly.")
+        # Fallback approach - use price movements directly
+        for i in range(len(predictions_inv)-1):
+            if predictions_inv[i+1] > actuals_inv[i] * 1.005:  # 0.5% increase prediction
+                signals[i] = 1  # Buy
+                confidence[i] = 0.7  # Moderate confidence
+            elif predictions_inv[i+1] < actuals_inv[i] * 0.995:  # 0.5% decrease prediction
+                signals[i] = -1  # Sell
+                confidence[i] = 0.7  # Moderate confidence
     
     # Calculate RMSE
     rmse = np.sqrt(np.mean((predictions_inv - actuals_inv) ** 2))
     print(f"Test RMSE: {rmse:.2f}")
+    print(f"Generated {np.sum(signals == 1)} buy signals and {np.sum(signals == -1)} sell signals")
     
     # Create DataFrame with results
     results_df = pd.DataFrame({
@@ -939,6 +962,11 @@ def main():
     
     # Prepare data for TFT
     data, static_features, dates, num_static, num_known, num_observed = prepare_data_for_tft(df)
+    
+    # Check if data preparation was successful
+    if data is None:
+        print("Data preparation failed. Please check your input data.")
+        return
     
     print(f"Data prepared with {num_static} static features, {num_known} known features, and {num_observed} observed features")
     

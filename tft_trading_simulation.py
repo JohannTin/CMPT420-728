@@ -11,9 +11,9 @@ PREDICTIONS_FILE = 'tft_predictions.csv'
 
 # Confidence-based trade sizing configuration
 CONFIDENCE_TRADE_SIZES = {
-    0.85: 0.6,  # 40% of bankroll for very high confidence trades
-    0.75: 0.5,  # 30% of bankroll for high confidence trades
-    0.50: 0.4,  # 20% of bankroll for moderate confidence trades
+    0.85: 0.4,  # 40% of bankroll for very high confidence trades
+    0.75: 0.3,  # 30% of bankroll for high confidence trades
+    0.50: 0.2,  # 20% of bankroll for moderate confidence trades
 }
 
 # Kelly Criterion configuration

@@ -17,8 +17,8 @@ CONFIG = {
     'EPOCHS': 50,  # Increased epochs
     'BATCH_SIZE': 64,
     'LEARNING_RATE': 0.001,
-    'HIDDEN_SIZE': 64,
-    'NUM_HEADS': 4,
+    'HIDDEN_SIZE': 128,
+    'NUM_HEADS': 8,
     'NUM_QUANTILES': 3,  # for P10, P50, P90
     'DROPOUT_RATE': 0.2,
     'CONFIDENCE_THRESHOLD': 0.5,  # Lowered threshold

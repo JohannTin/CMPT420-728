@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib.dates as mdates
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torchvision.models as models
 
 CONFIG = {
     'SYMBOL': 'AAPL',
@@ -74,6 +75,28 @@ def create_sequences(data, seq_length, predict_ahead=1):
         sequences.append(seq)
         labels.append(label)
     return np.array(sequences), np.array(labels)
+
+def calculate_confidence(predictions, actuals):
+    """Calculate confidence based on prediction error."""
+    errors = np.abs(predictions - actuals)
+    max_error = np.max(actuals) - np.min(actuals)
+    print("max_error:", max_error)
+    confidence = 1 - (errors / max_error)
+    return confidence
+
+def generate_trading_signals(predictions, actuals, confidence_threshold):
+    """Generate trading signals based on predictions and confidence."""
+    confidence = calculate_confidence(predictions.flatten(), actuals)
+    signals = np.zeros(len(predictions))
+    
+    # Generate signals where confidence is high enough
+    high_confidence = confidence >= confidence_threshold
+    price_diff = predictions.flatten() - actuals.flatten()
+    
+    signals[high_confidence & (price_diff > 0)] = 1  # Buy signals
+    signals[high_confidence & (price_diff < 0)] = -1  # Sell signals
+    
+    return signals, confidence
 
 # Enhanced TCN model with Attention
 class Chomp1d(nn.Module):
@@ -196,70 +219,7 @@ class EarlyStopping:
             self.best_loss = val_loss
             self.counter = 0
 
-def main():
-    # Check if MPS is available, otherwise fallback to CPU or CUDA
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-    print(f"Using device: {device}")
-
-    # Load and prepare data
-    df = load_and_prepare_data()
-    
-    # Select features for the model
-    feature_columns = [
-        'Close', 'EMA_8', 'SMA_200',
-        'RSI', 'MACD', 'Signal_Line', 'MACD_Histogram',
-        'BB_upper', 'BB_middle', 'BB_lower',
-        'Volume',
-        'sentiment_positive', 'sentiment_neutral', 'sentiment_negative'
-    ]
-    
-    # Verify which columns are actually available
-    available_columns = [col for col in feature_columns if col in df.columns]
-    missing_columns = set(feature_columns) - set(available_columns)
-    if missing_columns:
-        print(f"Warning: The following columns are missing and will be excluded: {missing_columns}")
-        feature_columns = available_columns
-
-    # Clean and convert
-    for col in feature_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    df.dropna(inplace=True)
-
-
-    # Normalize the data
-    data = df[feature_columns].values
-    data_mean = data.mean(axis=0)
-    data_std = data.std(axis=0)
-    data_normalized = (data - data_mean) / data_std
-
-    X, y = create_sequences(data_normalized, CONFIG["SEQUENCE_LENGTH"], predict_ahead=1)
-
-    # Split into training and validation sets 
-    split_idx = int(len(X) * CONFIG["TRAIN_SIZE_RATIO"])
-    X_train, X_val = X[:split_idx], X[split_idx:]
-    y_train, y_val = y[:split_idx], y[split_idx:]
-
-    # Save original y values for later comparison
-    y_val_original = y_val.copy()
-    y_train_original = y_train.copy()
-
-    # Convert to PyTorch tensors and move to device
-    X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
-    y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
-    X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
-    y_val_tensor = torch.tensor(y_val, dtype=torch.float32).to(device)
-
-    # Permute X tensors for convolution
-    X_train_tensor = X_train_tensor.permute(0, 2, 1)
-    X_val_tensor = X_val_tensor.permute(0, 2, 1)
-
-    print(f"X_train_tensor shape: {X_train_tensor.shape}")
-    print(f"y_train_tensor shape: {y_train_tensor.shape}")
+def trainModel(device, X_train_tensor, X_val_tensor, y_train_tensor, y_val_tensor):
 
     # Create an instance of the improved model
     num_inputs = X_train_tensor.shape[1]  # Number of features
@@ -325,11 +285,179 @@ def main():
         # Print progress every 10 epochs
         if (epoch + 1) % 10 == 0:
             print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}')
+    
+    model.load_state_dict(best_model_state)
+    torch.save(best_model_state, 'Models/model_weights.pth')
 
-    # TODO: save and load model
+    # Plot training and validation loss
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses, label="Training Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (Huber)")
+    plt.title("Training and Validation Loss Over Time")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('improved_loss_curves.png')
+
+
+def main():
+    # Check if MPS is available, otherwise fallback to CPU or CUDA
+    if torch.backends.mps.is_available():
+        device = torch.device("mps")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    print(f"Using device: {device}")
+
+    # Load and prepare data
+    df = load_and_prepare_data()
+    
+    # Select features for the model
+    feature_columns = [
+        'Close', 'EMA_8', 'SMA_200',
+        'RSI', 'MACD', 'Signal_Line', 'MACD_Histogram',
+        'BB_upper', 'BB_middle', 'BB_lower',
+        'Volume',
+        'sentiment_positive', 'sentiment_neutral', 'sentiment_negative'
+    ]
+    
+    # Verify which columns are actually available
+    available_columns = [col for col in feature_columns if col in df.columns]
+    missing_columns = set(feature_columns) - set(available_columns)
+    if missing_columns:
+        print(f"Warning: The following columns are missing and will be excluded: {missing_columns}")
+        feature_columns = available_columns
+
+    # Clean and convert
+    for col in feature_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    df.dropna(inplace=True)
+
+
+    # Normalize the data
+    data = df[feature_columns].values
+    data_mean = data.mean(axis=0)
+    data_std = data.std(axis=0)
+    data_normalized = (data - data_mean) / data_std
+
+    X, y = create_sequences(data_normalized, CONFIG["SEQUENCE_LENGTH"], predict_ahead=1)
+
+    # Split into training and validation sets 
+    split_idx = int(len(X) * CONFIG["TRAIN_SIZE_RATIO"])
+    X_train, X_val = X[:split_idx], X[split_idx:]
+    y_train, y_val = y[:split_idx], y[split_idx:]
+
+    # Save original y values for later comparison
+    y_val_original = y_val.copy()
+    y_train_original = y_train.copy()
+
+    # Convert to PyTorch tensors and move to device
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32).to(device)
+    y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32).to(device)
+    y_val_tensor = torch.tensor(y_val, dtype=torch.float32).to(device)
+
+    # Permute X tensors for convolution
+    X_train_tensor = X_train_tensor.permute(0, 2, 1)
+    X_val_tensor = X_val_tensor.permute(0, 2, 1)
+
+    print(f"X_train_tensor shape: {X_train_tensor.shape}")
+    print(f"y_train_tensor shape: {y_train_tensor.shape}")
+
+    # train model
+    # Create an instance of the improved model
+    num_inputs = X_train_tensor.shape[1]  # Number of features
+    num_channels = [64, 128, 256, 128]  # Deeper network with more channels
+    model = ImprovedTemporalConvNet(num_inputs, num_channels, kernel_size=3, dropout=CONFIG["DROPOUT_RATE"])
+    model = model.to(device)
+
+    # Define loss function and optimizer with weight decay
+    criterion = nn.HuberLoss(delta=1.0)  # Huber loss is more robust to outliers than MSE
+    optimizer = torch.optim.AdamW(model.parameters(), lr=CONFIG["LEARNING_RATE"], weight_decay=1e-5)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True)
+
+    # Initialize early stopping
+    early_stopping = EarlyStopping(patience=70)
+
+    # Training loop with early stopping
+    num_epochs = CONFIG["EPOCHS"]  # More epochs with early stopping
+    train_losses = []
+    val_losses = []
+    best_val_loss = float('inf')
+    best_model_state = None
+
+    for epoch in range(num_epochs):
+        model.train()
+        optimizer.zero_grad()
+        
+        # Forward pass
+        output = model(X_train_tensor)
+        loss = criterion(output, y_train_tensor)
+        
+        # Backpropagation
+        loss.backward()
+        
+        # Gradient clipping to prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
+        optimizer.step()
+        
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_output = model(X_val_tensor)
+            val_loss = criterion(val_output, y_val_tensor)
+            val_losses.append(val_loss.item())
+        
+        # Store the loss
+        train_losses.append(loss.item())
+        
+        # Update learning rate scheduler
+        scheduler.step(val_loss)
+        
+        # Check if this is the best model so far
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_model_state = model.state_dict().copy()
+        
+        # Early stopping check
+        early_stopping(val_loss.item())
+        if early_stopping.early_stop:
+            print(f"Early stopping triggered at epoch {epoch+1}")
+            break
+        
+        # Print progress every 10 epochs
+        if (epoch + 1) % 10 == 0:
+            print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}')
+    
     # Load the best model
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
+    # torch.save(best_model_state, 'Models/model_weights.pth')
+
+    # Plot training and validation loss
+    plt.figure(figsize=(10, 6))
+    plt.plot(train_losses, label="Training Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss (Huber)")
+    plt.title("Training and Validation Loss Over Time")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig('improved_loss_curves.png')
+    # trainModel(device=device, X_train_tensor=X_train_tensor, X_val_tensor=X_val_tensor, y_train_tensor=y_train_tensor, y_val_tensor=y_val_tensor)
+    
+    # # load model 
+    # num_inputs = X_train_tensor.shape[1]  # Number of features
+    # num_channels = [64, 128, 256, 128] 
+    # model = ImprovedTemporalConvNet(num_inputs, num_channels, kernel_size=3, dropout=CONFIG["DROPOUT_RATE"])
+    # model = model.to(device)
+    # model.load_state_dict(torch.load('Models/model_weights.pth', weights_only=False))
+    # # model = torch.load('Models/model_weights.pth', weights_only)
 
     # Make predictions with the best model
     model.eval()
@@ -343,6 +471,13 @@ def main():
     # Denormalize truth values
     y_val_denormalized = y_val_original * data_std[0] + data_mean[0]
 
+    # Confidence and Signals
+    test_signals, confidence = generate_trading_signals(test_predictions_denormalized, y_val_denormalized, 
+                                                      CONFIG['CONFIDENCE_THRESHOLD'])
+    
+    buy_signals = test_signals == 1
+    sell_signals = test_signals == -1
+
     # Get the corresponding dates for validation set
     val_dates = df.index[split_idx + CONFIG["SEQUENCE_LENGTH"]:split_idx + CONFIG["SEQUENCE_LENGTH"] + len(y_val)]
 
@@ -350,6 +485,20 @@ def main():
     plt.figure(figsize=(14, 7))
     plt.plot(val_dates, y_val_denormalized, label="True Close Prices", color="blue", marker='o', markersize=3, linestyle="-")
     plt.plot(val_dates, test_predictions_denormalized, label="Predicted Close Prices", color="red", marker='x', markersize=3, linestyle="--")
+    
+    # Add Signals
+    plt.scatter(df.index[-len(y_val_denormalized):][buy_signals], y_val_denormalized[buy_signals], 
+               color='green', marker='^', s=100, label='Buy Signal')
+    plt.scatter(df.index[-len(y_val_denormalized):][sell_signals], y_val_denormalized[sell_signals], 
+               color='red', marker='v', s=100, label='Sell Signal')
+
+    # Add EMA and SMA lines
+    plt.plot(df.index[-len(y_val_denormalized):], df['EMA_8'].iloc[-len(y_val_denormalized):], 
+            label='8-day EMA', color='purple', linestyle='--', alpha=0.7)
+    plt.plot(df.index[-len(y_val_denormalized):], df['SMA_200'].iloc[-len(y_val_denormalized):], 
+            label='200-day SMA', color='gray', linestyle='--', alpha=0.7)
+    
+
     plt.title("Apple Stock: True vs. Predicted Close Prices (Improved Model)")
     plt.xlabel("Date")
     plt.ylabel("Close Price ($)")
@@ -376,17 +525,36 @@ def main():
     plt.tight_layout()
     plt.savefig('improved_stock_prediction.png')
 
-    # Plot training and validation loss
-    plt.figure(figsize=(10, 6))
-    plt.plot(train_losses, label="Training Loss")
-    plt.plot(val_losses, label="Validation Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss (Huber)")
-    plt.title("Training and Validation Loss Over Time")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig('improved_loss_curves.png')
+
+
+
+    # Next day prediction
+    model.eval()
+    last_sequence, __ = create_sequences(-data_normalized[CONFIG["SEQUENCE_LENGTH"]:], CONFIG["SEQUENCE_LENGTH"], predict_ahead=1)
+    last_sequence_tensor = torch.tensor(last_sequence, dtype=torch.float32).to(device)
+    # Permute X tensors for convolution
+    last_sequence_tensor = last_sequence_tensor.permute(0, 2, 1)
+    with torch.no_grad():
+        next_day_pred = model(last_sequence_tensor)
+        next_day_pred = next_day_pred.cpu().numpy()
+
+
+    # Denormalize Next day predictions
+    next_day_pred = next_day_pred * data_std[0] + data_mean[0]
+
+    last_actual = df['Close'].iloc[-1]
+    confidence_next = calculate_confidence(next_day_pred.flatten(), np.array([last_actual]).flatten())
+    
+    print(f"\nPredicted price for next day: ${next_day_pred[0]}")
+    print(f"Confidence level: {confidence_next[0]}")
+    
+    if confidence_next[0] >= CONFIG['CONFIDENCE_THRESHOLD']:
+        if next_day_pred[0][0] > last_actual:
+            print("High confidence BUY signal")
+        else:
+            print("High confidence SELL signal")
+    else:
+        print("No trading signal - confidence below threshold")
 
 if __name__ == "__main__":
     main()

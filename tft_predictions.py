@@ -1488,19 +1488,12 @@ def generate_trading_signals(
     predictions, p10, p90, actuals, model_uncertainty, confidence_threshold=0.6
 ):
     """
-    Generate trading signals based on TFT predictions, uncertainty and trend direction.
+    Generate trading signals based on TFT predictions with improved sell signal logic.
 
-    Args:
-        predictions: Array of price predictions (P50)
-        p10: Array of lower bound predictions (P10)
-        p90: Array of upper bound predictions (P90)
-        actuals: Array of actual prices
-        model_uncertainty: Array of model uncertainty values (from quantile differences)
-        confidence_threshold: Minimum confidence required to generate signals
-
-    Returns:
-        signals: Array of trading signals (1=buy, -1=sell, 0=no action)
-        confidence: Array of confidence scores for each signal
+    Changes to reduce overselling:
+    1. Different thresholds for buy/sell decisions
+    2. Adding trend consideration
+    3. Requiring stronger evidence for sell signals
     """
     # Calculate prediction errors
     errors = np.abs(predictions - actuals)
@@ -1511,14 +1504,13 @@ def generate_trading_signals(
 
     # Adjust confidence based on model uncertainty
     confidence = confidence_from_error * (
-        1 - model_uncertainty * 0.7
-    )  # Increase uncertainty impact
+        1 - model_uncertainty * 0.5
+    )  # Reduced uncertainty impact
 
     # Initialize signals
     signals = np.zeros(len(predictions))
 
-    # Calculate price movement predictions
-    # Look ahead prediction: difference between tomorrow's predicted price and today's actual price
+    # Calculate price movement predictions (future price change)
     price_changes = np.zeros(len(predictions))
     for i in range(len(predictions) - 1):
         price_changes[i] = predictions[i + 1] - actuals[i]
@@ -1528,37 +1520,84 @@ def generate_trading_signals(
     price_change_pct = price_changes / actuals
 
     # Calculate prediction width (P90 - P10) relative to price
-    # Narrow width means higher confidence
     pred_width_pct = (p90 - p10) / actuals
 
     # Reduce confidence when prediction interval is too wide
     confidence = confidence * (1 - np.minimum(pred_width_pct, 1) * 0.5)
 
-    # Generate signals based on predicted TREND rather than just price differences
-    high_confidence = confidence >= confidence_threshold
+    # Calculate trend over recent periods (last 5 days)
+    window_size = min(5, len(actuals))
+    trend = np.zeros(len(actuals))
 
-    # Stronger thresholds for meaningful signals (0.5% change)
+    for i in range(len(actuals)):
+        if i >= window_size - 1:
+            # Calculate the slope of recent prices
+            recent_prices = actuals[max(0, i - window_size + 1) : i + 1]
+            x = np.arange(len(recent_prices))
+            if len(x) > 1:  # Need at least 2 points for a trend
+                slope = np.polyfit(x, recent_prices, 1)[0]
+                trend[i] = slope / recent_prices.mean()  # Normalized slope
+
+    # Different thresholds for buy and sell signals
     buy_threshold = 0.005  # 0.5% predicted increase
-    sell_threshold = -0.005  # 0.5% predicted decrease
+    sell_threshold = -0.008  # 0.8% predicted decrease (more strict)
 
-    # Buy signal: tomorrow's price will be significantly higher than today's
-    signals[high_confidence & (price_change_pct > buy_threshold)] = 1
+    # Additional confidence requirement for sell signals
+    sell_confidence_boost = 1.2  # Require 20% more confidence for sells
 
-    # Sell signal: tomorrow's price will be significantly lower than today's
-    signals[high_confidence & (price_change_pct < sell_threshold)] = -1
+    # Find high confidence predictions
+    high_confidence_buy = confidence >= confidence_threshold
+    high_confidence_sell = confidence >= (confidence_threshold * sell_confidence_boost)
+
+    # Buy signals: Strong predicted increase AND (neutral or positive trend)
+    signals[
+        (high_confidence_buy) & (price_change_pct > buy_threshold) & (trend >= -0.001)
+    ] = 1  # Buy signal
+
+    # Sell signals: Very strong predicted decrease AND negative trend
+    signals[
+        (high_confidence_sell) & (price_change_pct < sell_threshold) & (trend < 0)
+    ] = -1  # Sell signal
+
+    # Add minimum holding period - don't allow sell signals right after buys
+    min_hold_period = 3  # Minimum days to hold before selling
+    for i in range(len(signals)):
+        if signals[i] == 1:  # Buy signal
+            # Don't allow sells for the next few periods
+            end_idx = min(i + min_hold_period, len(signals))
+            for j in range(i + 1, end_idx):
+                if signals[j] == -1:
+                    signals[j] = 0  # Cancel sell signal during holding period
 
     # Calculate final confidence for the signals
     signal_confidence = confidence.copy()
 
     # Boost confidence for stronger price movements
     for i in range(len(signals)):
-        if signals[i] != 0:
+        if signals[i] == 1:  # Buy signal
             # Boost confidence based on strength of predicted movement
             move_strength = min(abs(price_change_pct[i]) / 0.01, 1.0)  # Cap at 1.0
             signal_confidence[i] = min(confidence[i] * (1 + move_strength * 0.5), 1.0)
+        elif signals[i] == -1:  # Sell signal
+            # Boost confidence based on strength of predicted movement and negative trend
+            move_strength = min(abs(price_change_pct[i]) / 0.01, 1.0)  # Cap at 1.0
+            trend_strength = min(abs(trend[i]) / 0.005, 1.0) if trend[i] < 0 else 0
+            signal_confidence[i] = min(
+                confidence[i] * (1 + move_strength * 0.3 + trend_strength * 0.3), 1.0
+            )
 
     # Set confidence to 0 for no-signal periods
     signal_confidence[signals == 0] = 0
+
+    # Count signals
+    num_buy = np.sum(signals == 1)
+    num_sell = np.sum(signals == -1)
+    print(f"Generated {num_buy} buy signals and {num_sell} sell signals")
+
+    if num_buy == 0 and num_sell == 0:
+        print("WARNING: No signals generated with current thresholds.")
+    elif num_sell > 2 * num_buy:
+        print("WARNING: Many more sell signals than buy signals.")
 
     return signals, signal_confidence
 
@@ -1584,29 +1623,19 @@ def main():
         f"Data prepared with {num_static} static features, {num_known} known features, and {num_observed} observed features"
     )
 
-    # Skip grid search for initial testing - just use default config
-    print("\nSkipping grid search for initial testing...")
-    config = CONFIG
-
-    # Run initial training to diagnose issues
-    best_val_loss, model, test_dataset, test_dates, epochs_completed = (
-        train_model_with_params(
-            data, static_features, dates, num_static, num_known, num_observed, config
-        )
+    # Enable grid search for hyperparameter optimization
+    print("\nPerforming grid search for hyperparameters...")
+    best_params, best_model, best_test_dataset, best_test_dates = grid_search(
+        data, static_features, dates, num_static, num_known, num_observed
     )
 
-    # Create test dataloader
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-
-    # Analyze prediction distribution to check for flat predictions
-    _ = analyze_prediction_distribution(model, test_loader)
-
     # Evaluate the model
-    print("\nEvaluating model...")
-    results_df = evaluate_model(model, test_dataset, test_dates)
+    print("\nEvaluating best model...")
+    results_df = evaluate_model(best_model, best_test_dataset, best_test_dates)
 
     print("\nTrading simulation will be executed using tft_trading_simulation.py")
-    print("Model saved to models/tft_model_best.pth")
+    print("Best model saved to models/tft_model_best.pth")
+    print("Best parameters:", best_params)
 
 
 if __name__ == "__main__":

@@ -303,13 +303,8 @@ def trainModel(device, X_train_tensor, X_val_tensor, y_train_tensor, y_val_tenso
 
 
 def main():
-    # Check if MPS is available, otherwise fallback to CPU or CUDA
-    if torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    # Force CPU usage
+    device = torch.device("cpu")
     print(f"Using device: {device}")
 
     # Load and prepare data
@@ -474,7 +469,20 @@ def main():
     # Confidence and Signals
     test_signals, confidence = generate_trading_signals(test_predictions_denormalized, y_val_denormalized, 
                                                       CONFIG['CONFIDENCE_THRESHOLD'])
+
+    # Create DataFrame with predictions and actual values
+    predictions_df = pd.DataFrame({
+        'Date': df.index[split_idx + CONFIG["SEQUENCE_LENGTH"]:split_idx + CONFIG["SEQUENCE_LENGTH"] + len(y_val)],
+        'Actual_Close': y_val_denormalized,
+        'Predicted_Close': test_predictions_denormalized,
+        'Signal': test_signals,
+        'Confidence': confidence
+    })
     
+    # Save to CSV
+    predictions_df.to_csv('TCN_predictions.csv', index=False)
+    print("Predictions saved to TCN_predictions.csv")
+
     buy_signals = test_signals == 1
     sell_signals = test_signals == -1
 

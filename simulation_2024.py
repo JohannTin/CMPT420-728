@@ -224,32 +224,6 @@ def plot_performance_comparison(results):
     plt.savefig('trading_performance_comparison_2024.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-def plot_bankroll_over_time(results):
-    plt.figure(figsize=(12, 6))
-    
-    for model, result in results.items():
-        trades_df = result['trades']
-        if not trades_df.empty:
-            # Add initial bankroll point
-            initial_date = trades_df['Date'].min() - pd.Timedelta(days=1)
-            initial_bankroll = INITIAL_BANKROLL
-            
-            # Create complete timeline
-            dates = [initial_date] + trades_df['Date'].tolist()
-            bankrolls = [initial_bankroll] + trades_df['Bankroll'].tolist()
-            
-            plt.plot(dates, bankrolls, label=model, linewidth=2)
-    
-    plt.title('Bankroll Over Time (2024)')
-    plt.xlabel('Date')
-    plt.ylabel('Bankroll ($)')
-    plt.grid(True)
-    plt.legend()
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig('bankroll_over_time_2024.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
 def main():
     # Run simulation for all models
     results = {}
@@ -271,7 +245,6 @@ def main():
     
     # Create performance comparison plots
     plot_performance_comparison(results)
-    plot_bankroll_over_time(results)
 
 if __name__ == "__main__":
     main() 

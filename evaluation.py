@@ -63,11 +63,8 @@ results = pd.DataFrame({
 print("\nComparison Table:")
 print(results.to_string(index=False))
 
-# Create visualizations
-plt.figure(figsize=(20, 12))
-
 # 1. Time Series Plot
-plt.subplot(2, 2, 1)
+plt.figure(figsize=(15, 8))
 plt.plot(lstm_df['Date'], lstm_df['Actual'], label='Actual', linewidth=2, alpha=0.7)
 plt.plot(lstm_df['Date'], lstm_df['Predicted'], '-', label='LSTM', linewidth=2, alpha=0.7)
 plt.plot(tcn_df['Date'], tcn_df['Predicted_Close'], '-', label='TCN', linewidth=2, alpha=0.7)
@@ -78,15 +75,21 @@ plt.ylabel('Price')
 plt.legend()
 plt.xticks(rotation=45)
 plt.grid(True)
+plt.tight_layout()
+plt.savefig('time_series_comparison_2024.png', dpi=300, bbox_inches='tight')
+plt.close()
 
 # 2. MAE Comparison
-plt.subplot(2, 2, 2)
+plt.figure(figsize=(10, 6))
 sns.barplot(x='Model', y='MAE', data=results)
 plt.title('Mean Absolute Error (MAE) Comparison (2024)')
 plt.ylabel('MAE (Lower is better)')
+plt.tight_layout()
+plt.savefig('mae_comparison_2024.png', dpi=300, bbox_inches='tight')
+plt.close()
 
 # 3. Actual vs Predicted Scatter Plots
-plt.subplot(2, 2, 3)
+plt.figure(figsize=(10, 8))
 plt.scatter(lstm_df['Actual'], lstm_df['Predicted'], alpha=0.5, label='LSTM')
 plt.scatter(tcn_df['Actual_Close'], tcn_df['Predicted_Close'], alpha=0.5, label='TCN')
 plt.scatter(tft_df['Actual'], tft_df['Predicted'], alpha=0.5, label='TFT')
@@ -97,9 +100,12 @@ plt.title('Actual vs Predicted Values (2024)')
 plt.xlabel('Actual Values')
 plt.ylabel('Predicted Values')
 plt.legend()
+plt.tight_layout()
+plt.savefig('scatter_comparison_2024.png', dpi=300, bbox_inches='tight')
+plt.close()
 
 # 4. Residual Plot
-plt.subplot(2, 2, 4)
+plt.figure(figsize=(10, 8))
 lstm_residuals = lstm_df['Actual'] - lstm_df['Predicted']
 tcn_residuals = tcn_df['Actual_Close'] - tcn_df['Predicted_Close']
 tft_residuals = tft_df['Actual'] - tft_df['Predicted']
@@ -112,16 +118,13 @@ plt.title('Residual Plot (2024)')
 plt.xlabel('Actual Values')
 plt.ylabel('Residuals')
 plt.legend()
-
 plt.tight_layout()
-plt.savefig('model_comparison_2024.png', dpi=300, bbox_inches='tight')
+plt.savefig('residual_comparison_2024.png', dpi=300, bbox_inches='tight')
 plt.close()
 
-# Create individual time series plots for better visibility
-plt.figure(figsize=(15, 10))
 
 # LSTM Predictions
-plt.subplot(3, 1, 1)
+plt.figure(figsize=(15, 6))
 plt.plot(lstm_df['Date'], lstm_df['Actual'], label='Actual', linewidth=2)
 plt.plot(lstm_df['Date'], lstm_df['Predicted'], '-', label='LSTM Predicted', linewidth=2)
 plt.title('LSTM Model Predictions (2024)')
@@ -130,9 +133,12 @@ plt.ylabel('Price')
 plt.legend()
 plt.xticks(rotation=45)
 plt.grid(True)
+plt.tight_layout()
+plt.savefig('lstm_predictions_2024.png', dpi=300, bbox_inches='tight')
+plt.close()
 
 # TCN Predictions
-plt.subplot(3, 1, 2)
+plt.figure(figsize=(15, 6))
 plt.plot(tcn_df['Date'], tcn_df['Actual_Close'], label='Actual', linewidth=2)
 plt.plot(tcn_df['Date'], tcn_df['Predicted_Close'], '-', label='TCN Predicted', linewidth=2)
 plt.title('TCN Model Predictions (2024)')
@@ -141,9 +147,12 @@ plt.ylabel('Price')
 plt.legend()
 plt.xticks(rotation=45)
 plt.grid(True)
+plt.tight_layout()
+plt.savefig('tcn_predictions_2024.png', dpi=300, bbox_inches='tight')
+plt.close()
 
 # TFT Predictions
-plt.subplot(3, 1, 3)
+plt.figure(figsize=(15, 6))
 plt.plot(tft_df['Date'], tft_df['Actual'], label='Actual', linewidth=2)
 plt.plot(tft_df['Date'], tft_df['Predicted'], '-', label='TFT Predicted', linewidth=2)
 plt.title('TFT Model Predictions (2024)')
@@ -152,7 +161,6 @@ plt.ylabel('Price')
 plt.legend()
 plt.xticks(rotation=45)
 plt.grid(True)
-
 plt.tight_layout()
-plt.savefig('individual_predictions_2024.png', dpi=300, bbox_inches='tight')
+plt.savefig('tft_predictions_2024.png', dpi=300, bbox_inches='tight')
 plt.close()

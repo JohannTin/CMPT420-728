@@ -19,6 +19,14 @@ lstm_df['Date'] = pd.to_datetime(lstm_df['Date'])
 tcn_df['Date'] = pd.to_datetime(tcn_df['Date'])
 tft_df['Date'] = pd.to_datetime(tft_df['Date'])
 
+# Filter data for 2024 only
+start_date = '2024-01-01'
+end_date = '2024-12-31'
+
+lstm_df = lstm_df[(lstm_df['Date'] >= start_date) & (lstm_df['Date'] <= end_date)]
+tcn_df = tcn_df[(tcn_df['Date'] >= start_date) & (tcn_df['Date'] <= end_date)]
+tft_df = tft_df[(tft_df['Date'] >= start_date) & (tft_df['Date'] <= end_date)]
+
 # Calculate metrics for LSTM
 lstm_mae = mean_absolute_error(lstm_df['Actual'], lstm_df['Predicted'])
 lstm_r2 = r2_score(lstm_df['Actual'], lstm_df['Predicted'])
@@ -32,7 +40,7 @@ tft_mae = mean_absolute_error(tft_df['Actual'], tft_df['Predicted'])
 tft_r2 = r2_score(tft_df['Actual'], tft_df['Predicted'])
 
 # Print results
-print("Model Evaluation Results:")
+print("Model Evaluation Results (2024):")
 print("\nLSTM Model:")
 print(f"MAE: {lstm_mae:.4f}")
 print(f"R-squared: {lstm_r2:.4f}")
@@ -64,7 +72,7 @@ plt.plot(lstm_df['Date'], lstm_df['Actual'], label='Actual', linewidth=2, alpha=
 plt.plot(lstm_df['Date'], lstm_df['Predicted'], '-', label='LSTM', linewidth=2, alpha=0.7)
 plt.plot(tcn_df['Date'], tcn_df['Predicted_Close'], '-', label='TCN', linewidth=2, alpha=0.7)
 plt.plot(tft_df['Date'], tft_df['Predicted'], '-', label='TFT', linewidth=2, alpha=0.7)
-plt.title('Stock Price Predictions Comparison')
+plt.title('Stock Price Predictions Comparison (2024)')
 plt.xlabel('Date')
 plt.ylabel('Price')
 plt.legend()
@@ -74,7 +82,7 @@ plt.grid(True)
 # 2. MAE Comparison
 plt.subplot(2, 2, 2)
 sns.barplot(x='Model', y='MAE', data=results)
-plt.title('Mean Absolute Error (MAE) Comparison')
+plt.title('Mean Absolute Error (MAE) Comparison (2024)')
 plt.ylabel('MAE (Lower is better)')
 
 # 3. Actual vs Predicted Scatter Plots
@@ -85,7 +93,7 @@ plt.scatter(tft_df['Actual'], tft_df['Predicted'], alpha=0.5, label='TFT')
 plt.plot([min(lstm_df['Actual']), max(lstm_df['Actual'])], 
          [min(lstm_df['Actual']), max(lstm_df['Actual'])], 
          'r--', label='Perfect Prediction')
-plt.title('Actual vs Predicted Values')
+plt.title('Actual vs Predicted Values (2024)')
 plt.xlabel('Actual Values')
 plt.ylabel('Predicted Values')
 plt.legend()
@@ -100,13 +108,13 @@ plt.scatter(lstm_df['Actual'], lstm_residuals, alpha=0.5, label='LSTM')
 plt.scatter(tcn_df['Actual_Close'], tcn_residuals, alpha=0.5, label='TCN')
 plt.scatter(tft_df['Actual'], tft_residuals, alpha=0.5, label='TFT')
 plt.axhline(y=0, color='r', linestyle='--')
-plt.title('Residual Plot')
+plt.title('Residual Plot (2024)')
 plt.xlabel('Actual Values')
 plt.ylabel('Residuals')
 plt.legend()
 
 plt.tight_layout()
-plt.savefig('model_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig('model_comparison_2024.png', dpi=300, bbox_inches='tight')
 plt.close()
 
 # Create individual time series plots for better visibility
@@ -116,7 +124,7 @@ plt.figure(figsize=(15, 10))
 plt.subplot(3, 1, 1)
 plt.plot(lstm_df['Date'], lstm_df['Actual'], label='Actual', linewidth=2)
 plt.plot(lstm_df['Date'], lstm_df['Predicted'], '-', label='LSTM Predicted', linewidth=2)
-plt.title('LSTM Model Predictions')
+plt.title('LSTM Model Predictions (2024)')
 plt.xlabel('Date')
 plt.ylabel('Price')
 plt.legend()
@@ -127,7 +135,7 @@ plt.grid(True)
 plt.subplot(3, 1, 2)
 plt.plot(tcn_df['Date'], tcn_df['Actual_Close'], label='Actual', linewidth=2)
 plt.plot(tcn_df['Date'], tcn_df['Predicted_Close'], '-', label='TCN Predicted', linewidth=2)
-plt.title('TCN Model Predictions')
+plt.title('TCN Model Predictions (2024)')
 plt.xlabel('Date')
 plt.ylabel('Price')
 plt.legend()
@@ -138,7 +146,7 @@ plt.grid(True)
 plt.subplot(3, 1, 3)
 plt.plot(tft_df['Date'], tft_df['Actual'], label='Actual', linewidth=2)
 plt.plot(tft_df['Date'], tft_df['Predicted'], '-', label='TFT Predicted', linewidth=2)
-plt.title('TFT Model Predictions')
+plt.title('TFT Model Predictions (2024)')
 plt.xlabel('Date')
 plt.ylabel('Price')
 plt.legend()
@@ -146,5 +154,5 @@ plt.xticks(rotation=45)
 plt.grid(True)
 
 plt.tight_layout()
-plt.savefig('individual_predictions.png', dpi=300, bbox_inches='tight')
+plt.savefig('individual_predictions_2024.png', dpi=300, bbox_inches='tight')
 plt.close()

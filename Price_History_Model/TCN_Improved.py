@@ -287,7 +287,7 @@ def trainModel(device, X_train_tensor, X_val_tensor, y_train_tensor, y_val_tenso
             print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}')
     
     model.load_state_dict(best_model_state)
-    torch.save(best_model_state, 'Models/model_weights.pth')
+    torch.save(best_model_state, 'Models/TCN_model_weights.pth')
 
     # Plot training and validation loss
     plt.figure(figsize=(10, 6))
@@ -299,7 +299,7 @@ def trainModel(device, X_train_tensor, X_val_tensor, y_train_tensor, y_val_tenso
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('improved_loss_curves.png')
+    plt.savefig('TCN_loss_curves.png')
 
 
 def main():
@@ -448,7 +448,7 @@ def main():
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
-    plt.savefig('improved_loss_curves.png')
+    plt.savefig('TCN_loss_curves.png')
     # trainModel(device=device, X_train_tensor=X_train_tensor, X_val_tensor=X_val_tensor, y_train_tensor=y_train_tensor, y_val_tensor=y_val_tensor)
     
     # # load model 
@@ -523,7 +523,7 @@ def main():
                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.5'))
 
     plt.tight_layout()
-    plt.savefig('improved_stock_prediction.png')
+    plt.savefig('TCN_stock_prediction.png')
 
 
 

@@ -806,10 +806,7 @@ def prepare_data_for_tft(df):
     scaler = StandardScaler()
     data = scaler.fit_transform(df_clean[feature_cols + ["target"]])
 
-    # Create static features (expand beyond just a placeholder)
-    # For example, you could add stock metadata, market cap category, sector, etc.
-    # For now, we'll still use a placeholder but you should expand this
-    static_features = [1]  # Replace with actual static features when available
+    static_features = [1]  # We are only predicting AAPL stock price, so static is 1D
 
     # Define counts for model initialization
     num_known = len(known_cols)
@@ -823,7 +820,7 @@ def prepare_data_for_tft(df):
     # Save info for later
     CONFIG["target_scaler"] = scaler
     CONFIG["target_idx"] = len(feature_cols)  # Target is the last column
-    CONFIG["feature_cols"] = feature_cols  # Save column names for interpretation
+    CONFIG["feature_cols"] = feature_cols
 
     return data, static_features, df_clean.index, num_static, num_known, num_observed
 
